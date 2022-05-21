@@ -2,10 +2,11 @@ from torch import nn
 
 
 class Learnable_Shift(nn.Module):
-    def __init__(self, input_nc, n_channel, n_convs=2, norm_layer=nn.BatchNorm2d, multiplier=50.0):
+    def __init__(self, input_nc, n_channel, n_convs=2, norm_layer=nn.BatchNorm2d, shift_level=50.0, scale_level=30.0):
         super(Learnable_Shift, self).__init__()
         self.n_channel = n_channel
-        self.multiplier = multiplier
+        self.shift_level = shift_level
+        self.scale_level = scale_level
         self.model = []
         for i in range(n_convs):
             if i == 0:
@@ -27,6 +28,6 @@ class Learnable_Shift(nn.Module):
         x = x.view(-1, self.n_channel)
         output = self.fc(x)
         #print(output)
-        output = self.tanh(output) * self.multiplier
+        output = self.tanh(output) * self.shift_level
         #print(output)
         return output

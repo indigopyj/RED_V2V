@@ -57,7 +57,7 @@ class ShiftModel(BaseModel):
         self.model_names = ['Shift']
 
         #self.netR = REDNet(input_nc=256+3+3, ngfs=[256], n_convs=self.opt.n_convs, shift_param=self.opt.shift_param)
-        self.net_Shift = Learnable_Shift(input_nc=6, n_channel=64, n_convs=2, multiplier=10.0)
+        self.net_Shift = Learnable_Shift(input_nc=6, n_channel=64, n_convs=2)
         self.net_Shift = init_net(self.net_Shift, opt.gpu_ids)
         
 
