@@ -27,7 +27,7 @@ class BaseOptions():
         self.parser.add_argument('--npf', type=int, default=64, help='# of pred filters in first conv layer')
         self.parser.add_argument('--ndf', type=int, default=64, help='# of discrim filters in first conv layer')
         self.parser.add_argument('--which_model_netD', type=str, default='basic', help='selects model to use for netD')
-        self.parser.add_argument('--which_model_netG', type=str, default='resnet_9blocks',
+        self.parser.add_argument('--which_model_netG', type=str, default='resnet_6blocks',
                                  help='selects model to use for netG')
         self.parser.add_argument('--which_model_netP', type=str, default='unet_256',
                                  help='selects model to use for netG')
@@ -37,7 +37,7 @@ class BaseOptions():
                                  help='name of the experiment. It decides where to store samples and models')
         self.parser.add_argument('--dataset_mode', type=str, default='unaligned',
                                  help='chooses how datasets are loaded. [unaligned | aligned | single]')
-        self.parser.add_argument('--model', type=str, default='cycle_gan',
+        self.parser.add_argument('--model', type=str, default='unsup_single',
                                  help='chooses which model to use. cycle_gan, pix2pix, test')
         self.parser.add_argument('--which_direction', type=str, default='AtoB', help='AtoB or BtoA')
         self.parser.add_argument('--nThreads', default=2, type=int, help='# threads for loading data')
@@ -60,6 +60,19 @@ class BaseOptions():
                                  help='network initialization [normal|xavier|kaiming|orthogonal]')
 
         self.parser.add_argument('--split', type=str, default='', help='split')
+        # for RED
+        self.parser.add_argument('--main_G_path', type=str, default=None, help='path of main generator')
+        self.parser.add_argument("--label_nc", type=int, default=0, help='# of input label channels')
+        self.parser.add_argument('--tensorboard_dir', type=str, default=None, help='models are saved here')
+        self.parser.add_argument("--layer_idx", type=int, default=12)
+        self.parser.add_argument("--max_interval", type=int, default=5)
+        self.parser.add_argument('--Viper2Cityscapes', action='store_true', help="dataset setting")
+        self.parser.add_argument("--GAN_loss", action="store_true")
+        self.parser.add_argument("--Temporal_GAN_loss", action="store_true")
+        self.parser.add_argument("--lpips", action="store_true")
+        self.parser.add_argument("--n_convs", type=int, default=8)
+        self.parser.add_argument("--shift_param", action="store_true")
+        self.RED = False
 
         self.initialized = True
 
@@ -68,6 +81,7 @@ class BaseOptions():
             self.initialize()
         self.opt = self.parser.parse_args()
         self.opt.isTrain = self.isTrain  # train or test
+        self.opt.RED = self.RED
 
         str_ids = self.opt.gpu_ids.split(',')
         self.opt.gpu_ids = []
@@ -88,7 +102,10 @@ class BaseOptions():
         print('-------------- End ----------------')
 
         # save to the disk
-        expr_dir = os.path.join(self.opt.checkpoints_dir, self.opt.name)
+        if self.isTrain:
+            expr_dir = os.path.join(self.opt.checkpoints_dir, self.opt.name)
+        else:
+            expr_dir = os.path.join(self.opt.results_dir, self.opt.name)
         util.mkdirs(expr_dir)
         file_name = os.path.join(expr_dir, 'opt.txt')
         with open(file_name, 'wt') as opt_file:

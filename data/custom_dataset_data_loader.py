@@ -16,6 +16,9 @@ def CreateDataset(opt):
     elif opt.dataset_mode == 'unaligned_triplet_scale':
         from data.unaligned_triplet_dataset_scale import UnalignedTripletDataset
         dataset = UnalignedTripletDataset()
+    elif opt.dataset_mode == "video":
+        from data.video_dataset import VideoDataset
+        dataset = VideoDataset()
     else:
         raise ValueError("Dataset [%s] not recognized." % opt.dataset_mode)
 

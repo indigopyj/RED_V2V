@@ -1,1 +1,9 @@
 */__pycache__
+checkpoints/
+results/
+*.png
+*.jpg
+.vscode/
+tensorboard/
+visualize/
+checkpoints.zip

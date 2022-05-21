@@ -71,8 +71,8 @@ def colorize(gray, palette):
 
 # Converts a Tensor into a Numpy array
 # |imtype|: the desired type of the converted numpy array, from [-1, 1] to [0, 255], with the shape from (c, h, w) to (h, w, c)
-def tensor2im(image_tensor, imtype=np.uint8):
-    image_numpy = image_tensor[0].cpu().float().numpy()
+def tensor2im(image_tensor, idx=0, imtype=np.uint8):
+    image_numpy = image_tensor[idx].cpu().float().numpy()
     if image_numpy.shape[0] == 1:
         image_numpy = np.tile(image_numpy, (3, 1, 1))
     image_numpy = (np.transpose(image_numpy, (1, 2, 0)) + 1) / 2.0 * 255.0
@@ -92,8 +92,11 @@ def diagnose_network(net, name='network'):
     print(mean)
 
 
-def save_image(image_numpy, image_path):
+def save_image(image_numpy, image_path, create_dir=False):
+    if create_dir:
+        os.makedirs(os.path.dirname(image_path), exist_ok=True)
     image_pil = Image.fromarray(image_numpy)
+    h, w, _ = image_numpy.shape
     image_pil.save(image_path)
 
 def info(object, spacing=10, collapse=1):
@@ -165,3 +168,53 @@ def intersectionAndUnion(output, target, K, ignore_index=255):
     area_target, _ = np.histogram(target, bins=np.arange(K+1))
     area_union = area_output + area_target - area_intersection
     return area_intersection, area_union, area_target
+
+def scale_img(img, opt, transform):
+    if opt.phase == "test" or opt.phase == "val" or opt.shift_param:
+        opt.loadSizeW = opt.fineSizeW
+        opt.loadSizeH = opt.fineSizeH
+    if opt.resize_mode == "scale_shortest":
+        w, h = img.size
+        if w >= h: 
+            scale = opt.loadSize / h
+            new_w = int(w * scale)
+            new_h = opt.loadSize
+        else:
+            scale = opt.loadSize / w
+            new_w = opt.loadSize
+            new_h = int(h * scale)
+            
+        img = img.resize((new_w, new_h), Image.BICUBIC)
+    elif opt.resize_mode == "square":
+        img = img.resize((opt.loadSize, opt.loadSize), Image.BICUBIC)
+    elif opt.resize_mode == "rectangle":
+        img = img.resize((opt.loadSizeW, opt.loadSizeH), Image.BICUBIC)
+    elif opt.resize_mode == "none":
+        pass
+    else:
+        raise ValueError("Invalid resize mode!")
+
+    img = transform(img)
+    
+    if opt.phase == "test" or opt.phase == "val" or opt.shift_param: # no random crop
+        return img
+    
+
+    w = img.size(2)
+    h = img.size(1)
+    if opt.crop_mode == "square":
+        fineSizeW, fineSizeH = opt.fineSize, opt.fineSize
+    elif opt.crop_mode == "rectangle":
+        fineSizeW, fineSizeH = opt.fineSizeW, opt.fineSizeH
+    elif opt.crop_mode == "none":
+        fineSizeW, fineSizeH = w, h
+    else:
+        raise ValueError("Invalid crop mode!")
+
+    w_offset = random.randint(0, max(0, w - fineSizeW - 1))
+    h_offset = random.randint(0, max(0, h - fineSizeH - 1))
+
+    img = img[:, h_offset:h_offset + fineSizeH, w_offset:w_offset + fineSizeW]
+    
+    return img
+

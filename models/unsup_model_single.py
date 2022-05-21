@@ -49,19 +49,26 @@ class UnsupModel(BaseModel):
                                       opt.which_model_netD,
                                       opt.n_layers_D, opt.norm, use_sigmoid, opt.init_type, self.gpu_ids)
     if not self.isTrain or opt.continue_train:
-      which_epoch = opt.which_epoch
-      self.load_network(self.netG_A, 'G_A', which_epoch)
-      self.load_network(self.netG_B, 'G_B', which_epoch)
-      if self.isTrain:
-        self.load_network(self.netD_A, 'D_A', which_epoch)
-        self.load_network(self.netD_B, 'D_B', which_epoch)
+      if not self.opt.RED: # Train_RED, Test_RED가 아니면
+        which_epoch = opt.which_epoch
+        self.load_network(self.netG_A, 'G_A', which_epoch)
+        self.load_network(self.netG_B, 'G_B', which_epoch)
+        if self.isTrain:
+          self.load_network(self.netD_A, 'D_A', which_epoch)
+          self.load_network(self.netD_B, 'D_B', which_epoch)
+    
 
     if self.isTrain:
       self.old_lr = opt.lr
       self.fake_A_pool = ImagePool(opt.pool_size)
       self.fake_B_pool = ImagePool(opt.pool_size)
       # define loss functions
-      self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
+      #self.criterionGAN = networks.GANLoss(use_lsgan=not opt.no_lsgan, tensor=self.Tensor)
+      if opt.no_lsgan:
+          gan_mode = 'vanilla'
+      else:
+          gan_mode = 'lsgan'
+      self.criterionGAN = networks.GANLoss_custom(gan_mode=gan_mode).cuda()
       self.criterionCycle = torch.nn.L1Loss()
       self.criterionIdt = torch.nn.L1Loss()
       self.criterionUnsup = torch.nn.L1Loss()
@@ -349,3 +356,19 @@ class UnsupModel(BaseModel):
     self.save_network(self.netD_A, 'D_A', label, self.gpu_ids)
     self.save_network(self.netG_B, 'G_B', label, self.gpu_ids)
     self.save_network(self.netD_B, 'D_B', label, self.gpu_ids)
+
+  def profile(self, verbose=True):
+        from torchprofile import profile_macs
+        from torch import nn
+        if isinstance(self.netG_A, nn.DataParallel):
+            netG = self.netG_A.module
+        else:
+            netG = self.netG_A
+        with torch.no_grad():
+            macs = profile_macs(netG, (self.real_A[:1]))
+        params = 0
+        for p in netG.parameters():
+            params += p.numel()
+        if verbose:
+            print('MACs: %.3fG\tParams: %.3fM' % (macs / 1e9, params / 1e6), flush=True)
+        return macs, params

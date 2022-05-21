@@ -4,7 +4,7 @@ import ntpath
 import time
 from . import util
 from . import html
-
+from tensorboardX import SummaryWriter
 
 class Visualizer():
     def __init__(self, opt):
@@ -25,6 +25,10 @@ class Visualizer():
             print('create web directory %s...' % self.web_dir)
             util.mkdirs([self.web_dir, self.img_dir])
         self.log_name = os.path.join(opt.checkpoints_dir, opt.name, 'loss_log.txt')
+        if self.opt.tensorboard_dir != None:
+            self.tensorboard_dir = os.path.join(opt.tensorboard_dir, self.opt.name)
+            os.makedirs(self.tensorboard_dir, exist_ok=True)
+            self.writer = SummaryWriter(self.tensorboard_dir)
         with open(self.log_name, "a") as log_file:
             now = time.strftime("%c")
             log_file.write('================ Training Loss (%s) ================\n' % now)
@@ -111,7 +115,14 @@ class Visualizer():
                 'xlabel': 'epoch',
                 'ylabel': 'loss'},
             win=self.display_id)
-
+    def plot_tb(self, losses, step):
+        """display the current losses on tensorboard display: dictionary of error labels and values
+        """
+        if len(losses) == 0:
+            return
+        for k, v in losses.items():
+            self.writer.add_scalar(k,v, global_step=step)
+        self.writer.flush()
     # errors: same format as |errors| of plotCurrentErrors
     def print_current_errors(self, epoch, i, errors, t):
         message = '(epoch: %d, iters: %d, time: %.3f) ' % (epoch, i, t)

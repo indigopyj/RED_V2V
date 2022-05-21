@@ -15,11 +15,25 @@ def create_model(opt):
         from .reCycle_gan_model import ReCycleGANModel
         model = ReCycleGANModel()
     elif opt.model == 'unsup_single':
-        assert(opt.dataset_mode == 'unaligned_scale')
+        #assert(opt.dataset_mode == 'unaligned_scale')
         from .unsup_model_single import UnsupModel
         model = UnsupModel()
     else:
         raise ValueError("Model [%s] not recognized." % opt.model)
     model.initialize(opt)
+    print("model [%s] was created" % (model.name()))
+    return model
+
+def create_model_RED(opt):
+    model = None
+    from .RED_model import REDModel
+    model = REDModel(opt)
+    print("model [%s] was created" % (model.name()))
+    return model
+
+def create_model_Shift(opt):
+    model = None
+    from .Shift_model import ShiftModel
+    model = ShiftModel(opt)
     print("model [%s] was created" % (model.name()))
     return model

@@ -12,12 +12,19 @@ class UnalignedScaleDataset(BaseDataset):
         self.opt = opt
         self.root = opt.dataroot
         # if opt.split == "":
-        if opt.phase == "train":
-            self.dir_A = os.path.join(opt.dataroot, "train/A")
-            self.dir_B = os.path.join(opt.dataroot, "train/B")
-        if opt.phase == "test":
-            self.dir_A = os.path.join(opt.dataroot, "val/A")
-            self.dir_B = os.path.join(opt.dataroot, "val/B")
+        if opt.phase == "test" or opt.phase == "val":
+            phase = "val"
+        else:
+            phase = "train"
+        self.dir_A = os.path.join(opt.dataroot, 'Viper', phase, 'img')
+        self.dir_B = os.path.join(opt.dataroot, "Cityscapes_sequence", "leftImg8bit", phase)
+            
+        # if opt.phase == "train":
+        #     self.dir_A = os.path.join(opt.dataroot, "train/A")
+        #     self.dir_B = os.path.join(opt.dataroot, "train/B")
+        # if opt.phase == "test":
+        #     self.dir_A = os.path.join(opt.dataroot, "val/A")
+        #     self.dir_B = os.path.join(opt.dataroot, "val/B")
         # else:
         #     self.dir_A = os.path.join(opt.dataroot, opt.split, "A")
         #     self.dir_B = os.path.join(opt.dataroot, opt.split, "B")

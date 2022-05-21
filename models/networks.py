@@ -120,7 +120,10 @@ def define_G(input_nc, output_nc, ngf, which_model_netG, norm='batch', use_dropo
     else:
         raise NotImplementedError('Generator model name [%s] is not recognized' % which_model_netG)
     if len(gpu_ids) > 0:
-        netG.cuda(gpu_ids[0])
+        assert (torch.cuda.is_available())
+        netG.to(gpu_ids[0])
+        if len(gpu_ids) > 1:
+            netG = torch.nn.DataParallel(netG, gpu_ids)
     init_weights(netG, init_type=init_type)
     return netG
 
@@ -143,7 +146,10 @@ def define_D(input_nc, ndf, which_model_netD,
         raise NotImplementedError('Discriminator model name [%s] is not recognized' %
                                   which_model_netD)
     if use_gpu:
-        netD.cuda(gpu_ids[0])
+        assert (torch.cuda.is_available())
+        netD.to(gpu_ids[0])
+        if len(gpu_ids) > 1:
+            netD = torch.nn.DataParallel(netD, gpu_ids)
     init_weights(netD, init_type=init_type)
     return netD
 
@@ -197,7 +203,7 @@ def define_C(output_nc, ndf, init_type='normal', gpu_ids=[]):
 # When LSGAN is used, it is basically same as MSELoss,
 # but it abstracts away the need to create the target label tensor
 # that has the same size as the input
-class GANLoss(nn.Module):
+class GANLoss(nn.Module): # not used here
     def __init__(self, use_lsgan=True, target_real_label=1.0, target_fake_label=0.0,
                  tensor=torch.FloatTensor):
         super(GANLoss, self).__init__()
@@ -229,10 +235,119 @@ class GANLoss(nn.Module):
             target_tensor = self.fake_label_var
         return target_tensor
 
+
     def __call__(self, input, target_is_real):
-        target_tensor = self.get_target_tensor(input, target_is_real)
-        return self.loss(input, target_tensor)
+        if isinstance(input, list):
+            losses = []
+            for p in input:
+                target_tensor = self.get_target_tensor(p, target_is_real)
+                losses.append(self.loss(p, target_tensor))
+            return sum(losses)
+        else:
+            target_tensor = self.get_target_tensor(input, target_is_real)
+            loss = self.loss(input, target_tensor)
+        # original code: 
+        # target_tensor = self.get_target_tensor(input, target_is_real)
+        # loss = self.loss(input, target_tensor)
+        return loss
         
+class GANLoss_custom(nn.Module):
+    """Define different GAN objectives.
+
+    The GANLoss class abstracts away the need to create the target label tensor
+    that has the same size as the input.
+    """
+
+    def __init__(self, gan_mode, target_real_label=1.0, target_fake_label=0.0):
+        """ Initialize the GANLoss class.
+
+        Parameters:
+            gan_mode (str) - - the type of GAN objective. It currently supports vanilla, lsgan, and wgangp.
+            target_real_label (bool) - - label for a real image
+            target_fake_label (bool) - - label of a fake image
+
+        Note: Do not use sigmoid as the last layer of Discriminator.
+        LSGAN needs no sigmoid. vanilla GANs will handle it with BCEWithLogitsLoss.
+        """
+        super(GANLoss_custom, self).__init__()
+        self.register_buffer('real_label', torch.tensor(target_real_label))
+        self.register_buffer('fake_label', torch.tensor(target_fake_label))
+        self.register_buffer('zero_tensor', torch.tensor(0.))
+        self.zero_tensor.requires_grad_(False)
+        self.gan_mode = gan_mode
+        if gan_mode == 'lsgan':
+            self.loss = nn.MSELoss()
+        elif gan_mode == 'vanilla':
+            self.loss = nn.BCEWithLogitsLoss()
+        elif gan_mode == 'wgangp':
+            self.loss = None
+        elif gan_mode == 'hinge':
+            self.loss = None
+        else:
+            raise NotImplementedError('gan mode %s not implemented' % gan_mode)
+
+    def get_target_tensor(self, prediction, target_is_real):
+        if target_is_real:
+            target_tensor = self.real_label
+        else:
+            target_tensor = self.fake_label
+        return target_tensor.expand_as(prediction)
+
+    def get_zero_tensor(self, prediction):
+        return self.zero_tensor.expand_as(prediction)
+
+    def __call__(self, prediction, target_is_real, for_discriminator=True):
+        """Calculate loss given Discriminator's output and grount truth labels.
+
+        Parameters:
+            prediction (tensor) - - tpyically the prediction output from a discriminator
+            target_is_real (bool) - - if the ground truth label is for real images or fake images
+
+        Returns:
+            the calculated loss.
+        """
+        if self.gan_mode in ['lsgan', 'vanilla']:
+            if isinstance(prediction, list):
+                losses = []
+                for p in prediction:
+                    target_tensor = self.get_target_tensor(p, target_is_real)
+                    losses.append(self.loss(p, target_tensor))
+                return sum(losses)
+            else:
+                target_tensor = self.get_target_tensor(prediction, target_is_real)
+                loss = self.loss(prediction, target_tensor)
+        elif self.gan_mode == 'wgangp':
+            if target_is_real:
+                loss = -prediction.mean()
+            else:
+                loss = prediction.mean()
+        elif self.gan_mode == 'hinge':
+            if isinstance(prediction, list):
+                loss = 0
+                for pred_i in prediction:
+                    if isinstance(pred_i, list):
+                        pred_i = pred_i[-1]
+                    loss_tensor = self(pred_i, target_is_real, for_discriminator)
+                    bs = 1 if len(loss_tensor.size()) == 0 else loss_tensor.size(0)
+                    new_loss = torch.mean(loss_tensor.view(bs, -1), dim=1)
+                    loss += new_loss
+                return loss / len(prediction)
+            else:
+                if for_discriminator:
+                    if target_is_real:
+                        minval = torch.min(prediction - 1, self.get_zero_tensor(prediction))
+                        loss = -torch.mean(minval)
+                    else:
+                        minval = torch.min(-prediction - 1, self.get_zero_tensor(prediction))
+                        loss = -torch.mean(minval)
+                else:
+                    assert target_is_real
+                    loss = -torch.mean(prediction)
+        else:
+            raise NotImplementedError('gan mode %s not implemented' % self.gan_mode)
+        return loss
+    
+    
 class FusionNetGenerator(nn.Module):
     def __init__(self, input_nc, output_nc, nff=64, norm_layer=nn.BatchNorm2d, use_dropout=False, n_blocks=6, gpu_ids=[], padding_type='reflect'):
         assert(n_blocks >= 0)
@@ -317,10 +432,10 @@ class ResnetGenerator(nn.Module):
         self.model = nn.Sequential(*model)
 
     def forward(self, input):
-        if self.gpu_ids and isinstance(input.data, torch.cuda.FloatTensor):
-            return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
-        else:
-            return self.model(input)
+        # if self.gpu_ids and isinstance(input.data, torch.cuda.FloatTensor):
+        #     return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
+        # else:
+        return self.model(input)
 
 
 # Define a resnet block
@@ -559,10 +674,10 @@ class NLayerDiscriminator(nn.Module):
         self.model = nn.Sequential(*sequence)
 
     def forward(self, input):
-        if len(self.gpu_ids) and isinstance(input.data, torch.cuda.FloatTensor):
-            return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
-        else:
-            return self.model(input)
+            # if len(self.gpu_ids) and isinstance(input.data, torch.cuda.FloatTensor):
+            #     return nn.parallel.data_parallel(self.model, input, self.gpu_ids)
+            # else:
+        return self.model(input)
 
 class PixelDiscriminator(nn.Module):
     def __init__(self, input_nc, ndf=64, norm_layer=nn.BatchNorm2d, use_sigmoid=False, gpu_ids=[]):
