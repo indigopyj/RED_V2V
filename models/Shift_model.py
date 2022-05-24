@@ -8,6 +8,7 @@ from data.data_loader import CreateDataLoader
 from models import networks
 from .base_model import BaseModel
 from models.modules.shift_modules import Learnable_Shift
+from models.modules.shift_modules import Learnable_Scale
 from util.util import tensor2im, save_image
 import cv2
 import numpy as np
@@ -59,7 +60,9 @@ class ShiftModel(BaseModel):
         #self.netR = REDNet(input_nc=256+3+3, ngfs=[256], n_convs=self.opt.n_convs, shift_param=self.opt.shift_param)
         self.net_Shift = Learnable_Shift(input_nc=6, n_channel=64, n_convs=2)
         self.net_Shift = init_net(self.net_Shift, opt.gpu_ids)
-        
+
+        self.net_Scale = Learnable_Scale(input_nc=6, n_channel=64, n_convs=2)
+        self.net_Scale = init_net(self.net_Scale, opt.gpu_ids)
 
         # define loss functions
         self.criterionL1 = torch.nn.L1Loss()
@@ -104,7 +107,8 @@ class ShiftModel(BaseModel):
                 self.criterionL1_shift = torch.nn.L1Loss()
                 
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
-            self.optimizer = torch.optim.Adam(self.net_Shift.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
+            params = list(self.net_Shift.parameters()) + list(self.net_Scale.parameters())
+            self.optimizer = torch.optim.Adam(params, lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers = []
             self.optimizers.append(self.optimizer)
             self.schedulers = []
@@ -199,22 +203,49 @@ class ShiftModel(BaseModel):
         self.width = 128
         #self.real_diff = self.real_act - self.ref_act
         self.img1_resized = F.interpolate(self.img1, size=(self.height, self.width), mode='bicubic')
-        self.img2_resized = F.interpolate(self.img2, size=(self.height, self.width), mode='bicubic')
+
+        # replacing img2_resized input with randomly warped img1_resized
+        flow, scale, shift = self.generate_flow(B, self.height, self.width)
+        self.randomly_warped_x1 = warp(self.img1_resized, flow)
+
+
+        # self.img2_resized = F.interpolate(self.img2, size=(self.height, self.width), mode='bicubic')
         # if shifted, self.ref_act is warped and self.flow is not None
-        self.shift_param = self.net_Shift(torch.cat((self.img1_resized, self.img2_resized) , 1))
+        self.shift_param = self.net_Shift(torch.cat((self.img1_resized, self.randomly_warped_x1) , 1))
+        self.scale_param = self.net_Scale(torch.cat((self.img1_resized, self.randomly_warped_x1), 1))
+
         B, C, H, W = self.img1_resized.shape
-        shift_lr = self.shift_param[:, 0].expand(self.height, self.width, B).permute(2,0,1) # shift right(+) or left(-)
-        shift_ud = self.shift_param[:, 1].expand(self.height, self.width, B).permute(2,0,1) # shift up(+) or down(-)
+
+        x_range = np.arange(- W / 2 * 0.01, W / 2 * 0.01, 0.01)
+        y_range = np.arange(- H / 2 * 0.01, H / 2 * 0.01, 0.01)
+
+        scale_x = self.scale_param[:, 0].expand(self.height, self.width, B).permute(2,0,1)
+        scale_y = self.scale_param[:, 1].expand(self.height, self.width, B).permute(2,0,1)
+
+        shift_x = self.shift_param[:, 0].expand(self.height, self.width, B).permute(2,0,1)
+        shift_y = self.shift_param[:, 1].expand(self.height, self.width, B).permute(2,0,1)
+
+        xx = np.tile(x_range.reshape(1, -1), (H, 1))
+        yy = np.tile(y_range.reshape(-1, 1), (1, W))
+
+        xx = torch.from_numpy(xx).cuda() * scale_x + shift_x
+        yy = torch.from_numpy(yy).cuda() * scale_y + shift_y
+
+        # B, C, H, W = self.img1_resized.shape
+        # shift_lr = self.shift_param[:, 0].expand(self.height, self.width, B).permute(2,0,1) # shift right(+) or left(-)
+        # shift_ud = self.shift_param[:, 1].expand(self.height, self.width, B).permute(2,0,1) # shift up(+) or down(-)
+
         self.flow = torch.ones([B, 2, self.height, self.width])
-        self.flow[:, 0, :, :] = shift_lr
-        self.flow[:, 1, :, :] = shift_ud
+        self.flow[:,0,:,:] = xx
+        self.flow[:,1,:,:] = yy
         self.flow = self.flow.float().cuda()
         #warped_ref_act = warp(ref_act, flow)
+
         self.warped_img1 = warp(self.img1_resized, self.flow)
             
 
     def backward(self):
-        self.loss_shift = self.criterionL1_shift(self.warped_img1, self.img2_resized)
+        self.loss_shift = self.criterionL1_shift(self.warped_img1, self.randomly_warped_x1) # self.img2_resized or self.randomly_warped_x1
         self.loss_shift.backward()
 
     
@@ -226,11 +257,10 @@ class ShiftModel(BaseModel):
         self.optimizer.step()
         
         
-            
-            
-        
+
     def save(self, label):
         self.save_network(self.net_Shift, 'Shift', label, self.gpu_ids)
+        self.save_network(self.net_Scale, 'Scale', label, self.gpu_ids)
 
 
     def evaluate_model(self, step):
@@ -238,6 +268,7 @@ class ShiftModel(BaseModel):
         save_dir = os.path.join(self.save_dir, 'eval', str(step))
         os.makedirs(save_dir, exist_ok=True)
         self.net_Shift.eval()
+        self.net_Scale.eval()
         
         
         with torch.no_grad(): 
@@ -257,27 +288,57 @@ class ShiftModel(BaseModel):
                     self.set_test_input(img2_paths) # load an image (img1 + interval) as a batch : self.next_img
                     img1_resized = F.interpolate(self.img1, size=(self.height, self.width), mode='bicubic')
                     nextimg_resized = F.interpolate(self.next_img, size=(self.height, self.width), mode='bicubic')
-                    shift_params = self.net_Shift(torch.cat((img1_resized, nextimg_resized) , 1))
+
                     B, C, H, W = img1_resized.shape
-                    shift_lr = shift_params[:, 0].expand(H, W, B).permute(2,0,1) # shift left(+) or right(-)
-                    shift_ud = shift_params[:, 1].expand(H, W, B).permute(2,0,1) # shift up(+) or down(-)
-                    flow = torch.ones([B, 2, H, W])
-                    flow[:, 0, :, :] = shift_lr
-                    flow[:, 1, :, :] = shift_ud
+                    # shift_lr = shift_params[:, 0].expand(H, W, B).permute(2,0,1) # shift left(+) or right(-)
+                    # shift_ud = shift_params[:, 1].expand(H, W, B).permute(2,0,1) # shift up(+) or down(-)
+                    # flow = torch.ones([B, 2, H, W])
+
+                    # replacing img2_resized input with randomly warped img1_resized
+                    flow, scale, shift = self.generate_flow(B, H, W)
+                    randomly_warped_x1 = warp(img1_resized, flow)
+
+                    # self.img2_resized = F.interpolate(self.img2, size=(self.height, self.width), mode='bicubic')
+                    # if shifted, self.ref_act is warped and self.flow is not None
+                    shift_param = self.net_Shift(torch.cat((img1_resized, randomly_warped_x1), 1))
+                    scale_param = self.net_Scale(torch.cat((img1_resized, randomly_warped_x1), 1))
+
+                    B, C, H, W = img1_resized.shape
+
+                    x_range = np.arange(- W / 2 * 0.01, W / 2 * 0.01, 0.01)
+                    y_range = np.arange(- H / 2 * 0.01, H / 2 * 0.01, 0.01)
+
+                    scale_x = scale_param[:, 0].expand(self.height, self.width, B).permute(2, 0, 1)
+                    scale_y = scale_param[:, 1].expand(self.height, self.width, B).permute(2, 0, 1)
+
+                    shift_x = shift_param[:, 0].expand(self.height, self.width, B).permute(2, 0, 1)
+                    shift_y = shift_param[:, 1].expand(self.height, self.width, B).permute(2, 0, 1)
+
+                    xx = np.tile(x_range.reshape(1, -1), (H, 1))
+                    yy = np.tile(y_range.reshape(-1, 1), (1, W))
+
+                    xx = torch.from_numpy(xx).cuda() * scale_x + shift_x
+                    yy = torch.from_numpy(yy).cuda() * scale_y + shift_y
+
+                    flow = torch.ones([B, 2, self.height, self.width])
+                    flow[:, 0, :, :] = xx
+                    flow[:, 1, :, :] = yy
                     flow = flow.float().cuda()
-                    #warped_ref_act = warp(ref_act, flow)
+
+                    # warped_ref_act = warp(ref_act, flow)
                     warped_img1 = warp(img1_resized, flow)
-                        
+
                     for k in range(len(self.img1_paths)):
                         img1_name, ext = os.path.splitext(self.img1_paths[k])
                         name = f"{img1_name}_{j}{ext}" # interval_originalname
                         input1_im = tensor2im(img1_resized, idx=k)
-                        input2_im = tensor2im(nextimg_resized, idx=k)
+                        input2_im = tensor2im(randomly_warped_x1, idx=k)
                         fake = tensor2im(warped_img1, idx=k)
                         cat_img = np.concatenate((input1_im, input2_im, fake), axis=1)
                         save_image(cat_img, os.path.join(save_dir, '%s' % name), create_dir=True)
 
         self.net_Shift.train()
+        self.net_Scale.train()
     
     def test_model(self, result_path):
         def make_heatmap(activation):
@@ -363,7 +424,7 @@ class ShiftModel(BaseModel):
         data_path = os.path.join(self.seq['seq_path'][0], img2)
         self.set_test_input([data_path])
         nextimg_resized = F.interpolate(self.next_img, size=(self.height, self.width), mode='bicubic')
-        
+
         if isinstance(self.netR, nn.DataParallel):
             netR = self.netR.module
         else:
@@ -387,22 +448,22 @@ class ShiftModel(BaseModel):
                 errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
         return errors_ret
     
-    def generate_flow(H, W, scale_level=30.0, shift_level=50.0):
+    def generate_flow(self, B, H, W, scale_level=15.0, shift_level=25.0):
         import random
-        scale_x = random.unit(-scale_level, scale_level)
-        scale_y = random.unit(-scale_level, scale_level)
+        scale_x = random.uniform(-scale_level, scale_level)
+        scale_y = random.uniform(-scale_level, scale_level)
         shift_x = random.randint(-shift_level, shift_level)
         shift_y = random.randint(-shift_level, shift_level)
-        
-        x_range = np.arange(- H/2 * 0.01, H/2 * 0.01, 0.01)
-        y_range = np.arange(- W/2 * 0.01, W/2 * 0.01, 0.01)
-        
+
+        x_range = np.arange(- W/2 * 0.01, W/2 * 0.01, 0.01)
+        y_range = np.arange(- H/2 * 0.01, H/2 * 0.01, 0.01)
+
         xx = np.tile(x_range.reshape(1,-1), (H,1)) * scale_x + shift_x
         yy = np.tile(y_range.reshape(-1,1), (1,W)) * scale_y + shift_y
-        
-        flow = np.ones([H,W,2])
-        flow[:,:,0] = xx
-        flow[:,:,1] = yy
-        flow = torch.from_numpy(flow.transpose((2, 0, 1))).float()
+
+        flow = torch.ones([B, 2, H, W])
+        flow[:, 0, :, :] = torch.from_numpy(xx).expand(B, H, W)
+        flow[:, 1, :, :] = torch.from_numpy(yy).expand(B, H, W)
+        flow = flow.float().cuda()
 
         return flow, (scale_x, scale_y), (shift_x, shift_y)
