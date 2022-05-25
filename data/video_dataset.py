@@ -51,7 +51,7 @@ class VideoDataset(BaseDataset):
         A_path = sorted(os.listdir(seq_path))
         interval = torch.randint(1, self.opt.max_interval, [1]).item()
         if self.opt.phase != 'train':
-            idx1 = 0 #torch.randint(0, len(A_path) - self.opt.max_interval, [1]).item()
+            idx1 = torch.randint(0, len(A_path) - self.opt.max_interval, [1]).item()
         else:
             idx1 = torch.randint(0, len(A_path) - interval, [1]).item()
         img_root = seq_path

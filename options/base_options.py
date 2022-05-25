@@ -72,6 +72,7 @@ class BaseOptions():
         self.parser.add_argument("--lpips", action="store_true")
         self.parser.add_argument("--n_convs", type=int, default=8)
         self.parser.add_argument("--shift_param", action="store_true")
+        self.parser.add_argument("--act_GAN_loss", action="store_true")
         self.RED = False
 
         self.initialized = True

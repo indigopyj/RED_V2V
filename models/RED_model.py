@@ -32,7 +32,7 @@ def init_net(net, gpu_ids):
 def create_eval_dataloader(opt, phase="val"):
     opt = copy.deepcopy(opt)
     opt.isTrain = False
-    opt.serial_batches = True
+    #opt.serial_batches = True
     opt.phase = phase # 고쳐야됨
     dataloader = CreateDataLoader(opt)
     dataloader = dataloader.load_data()
@@ -52,7 +52,7 @@ class REDModel(BaseModel):
 
         # specify the training losses you want to print out. The training/test scripts will call <BaseModel.get_current_losses>
         self.loss_names = ['l1', 'l1_out']
-        if opt.GAN_loss:
+        if opt.GAN_loss or opt.act_GAN_loss:
             self.loss_names += ['G_A', 'D_A']
         if opt.lpips:
             self.loss_names += ['lpips']
@@ -78,10 +78,16 @@ class REDModel(BaseModel):
                                             opt.n_layers_D, opt.norm, False, opt.init_type, self.gpu_ids)
                 
                 self.fake_B_pool = ImagePool(opt.pool_size)
+                
+            elif self.opt.act_GAN_loss:
+                self.netD_A = networks.define_D(256 + 256 + 3 + 3, 512,
+                                            "activation",
+                                            opt.n_layers_D, opt.norm, False, opt.init_type, self.gpu_ids)
+                self.fake_B_pool = ImagePool(opt.pool_size)
             
             if self.opt.Temporal_GAN_loss:
-                self.netD_T_A = networks.define_D(opt.output_nc * 2, opt.ndf,
-                                            opt.which_model_netD,
+                self.netD_T_A = networks.define_D(3 + 3, 512,
+                                            "activation",
                                             opt.n_layers_D, opt.norm, False, opt.init_type, self.gpu_ids) # temporal discriminator
             
                 self.loss_names += ['D_T']
@@ -95,14 +101,18 @@ class REDModel(BaseModel):
             if self.opt.GAN_loss and self.isTrain:
                 #self.criterionGAN = networks.GANLoss(use_lsgan=False, tensor=self.Tensor)
                 self.criterionGAN = networks.GANLoss_custom(gan_mode='vanilla').to(self.device)
+            elif self.opt.act_GAN_loss and self.isTrain:
+                self.criterionGAN = networks.GANLoss_custom(gan_mode='lsgan').to(self.device)
             if self.opt.lpips:
                 from models import lpips
                 self.netLPIPS = lpips.PerceptualLoss(model="net-lin", net="vgg", vgg_blocks=["1", "2", "3", "4", "5"], use_gpu=True,)
             
             if opt.continue_train:
                 self.load_network(self.netR, 'RED', self.opt.which_epoch)
-                if self.opt.GAN_loss:
+                if self.opt.GAN_loss or self.opt.act_GAN_loss:
                     self.load_network(self.netD_A, 'D_A', self.opt.which_epoch)  
+                if self.opt.Temporal_GAN_loss:
+                    self.load_network(self.netD_T_A, 'D_T_A', self.opt.which_epoch) 
                 
             if self.opt.shift_param:
                 self.opt.actl1 = True
@@ -113,7 +123,7 @@ class REDModel(BaseModel):
             self.optimizer = torch.optim.Adam(self.netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers = []
             self.optimizers.append(self.optimizer)
-            if self.opt.GAN_loss:
+            if self.opt.GAN_loss or self.opt.act_GAN_loss:
                 self.optimizer_D_A = torch.optim.Adam(self.netD_A.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
                 self.optimizers.append(self.optimizer_D_A)
             if self.opt.Temporal_GAN_loss:
@@ -220,6 +230,7 @@ class REDModel(BaseModel):
         if self.opt.lambda_feature > 0:
             self.hook_acts(self.RED_acts)
         self.fake_im = self.modelG.model[self.opt.layer_idx:](self.fake_act)
+        self.ref_output = self.modelG.model[self.opt.layer_idx:](self.ref_act)
 
     def backward(self):
         lambda_l1 = self.opt.lambda_L1
@@ -237,7 +248,12 @@ class REDModel(BaseModel):
             pred_fake = self.netD_A(self.fake_im)
             self.loss_G_A = self.criterionGAN(pred_fake, True, for_discriminator=False)
             self.loss += self.loss_G_A
-        
+            
+        if self.opt.act_GAN_loss:
+            pred_fake = self.netD_A(torch.cat((self.img1_resized, self.img2_resized, self.ref_act, self.fake_diff), 1))
+            self.loss_G_A = self.criterionGAN(pred_fake, True, for_discriminator=False)
+            self.loss += self.loss_G_A
+            
         if self.opt.lpips:
             self.loss_lpips = self.opt.lambda_lpips * self.netLPIPS(self.fake_im, self.real_im).mean()
             self.loss += self.loss_lpips
@@ -258,9 +274,9 @@ class REDModel(BaseModel):
     def backward_D_basic(self, netD, real, fake):
         # Real
         pred_real = netD(real)
-        loss_D_real = self.criterionGAN(pred_real, True)
         # Fake
         pred_fake = netD(fake.detach())
+        loss_D_real = self.criterionGAN(pred_real, True)
         loss_D_fake = self.criterionGAN(pred_fake, False)
         # Combined loss and calculate gradients
         loss_D = (loss_D_real + loss_D_fake) * 0.5
@@ -269,8 +285,14 @@ class REDModel(BaseModel):
     
     def backward_D_A(self):
         """Calculate GAN loss for discriminator D_A"""
-        fake_B = self.fake_B_pool.query(self.fake_im)
-        self.loss_D_A = self.backward_D_basic(self.netD_A, self.real_im, fake_B)
+        if self.opt.GAN_loss:
+            fake_B = self.fake_B_pool.query(self.fake_im)
+            real = self.real_im
+        elif self.opt.act_GAN_loss:
+            real = torch.cat((self.img1_resized, self.img2_resized, self.ref_act, self.real_diff), 1)
+            fake = torch.cat((self.img1_resized, self.img2_resized, self.ref_act, self.fake_diff), 1)
+            fake_B = self.fake_B_pool.query(fake)
+        self.loss_D_A = self.backward_D_basic(self.netD_A, real, fake_B)
         #self.loss_D_A = self.loss_D_A.data
     
     def calc_D_T_loss(self, past_frame, real_frame, fake_frame):
@@ -285,7 +307,7 @@ class REDModel(BaseModel):
         return loss_D_T
 
     def backward_D_T_A(self):
-        self.loss_D_T = self.opt.lambda_D_T * self.calc_D_T_loss(self.img1, self.real_im, self.fake_im)
+        self.loss_D_T = self.opt.lambda_D_T * self.calc_D_T_loss(self.ref_output, self.real_im, self.fake_im)
         self.loss_D_T.backward()
         
     def optimize_parameters(self, steps):
@@ -294,13 +316,13 @@ class REDModel(BaseModel):
         self.backward()
         self.optimizer.step()
             
-        if self.opt.GAN_loss:
+        if self.opt.GAN_loss or self.opt.act_GAN_loss:
             # D_A
             self.optimizer_D_A.zero_grad()
             self.backward_D_A()
             self.optimizer_D_A.step()
         
-        if self.opt.Temporal_GAN_loss and steps >= 100000:
+        if self.opt.Temporal_GAN_loss:
             self.optimizer_D_T_A.zero_grad()
             self.backward_D_T_A()
             self.optimizer_D_T_A.step()
@@ -311,7 +333,7 @@ class REDModel(BaseModel):
         
     def save(self, label):
         self.save_network(self.netR, 'RED', label, self.gpu_ids)
-        if self.opt.GAN_loss:
+        if self.opt.GAN_loss or self.opt.act_GAN_loss:
             self.save_network(self.netD_A, "D_A", label, self.gpu_ids)
         if self.opt.Temporal_GAN_loss:
             self.save_network(self.netD_A, "D_T_A", label, self.gpu_ids)
