@@ -7,3 +7,9 @@ results/
 tensorboard/
 visualize/
 checkpoints.zip
+saved_models/
+*.pyc
+__pycache__/
+# Byte-compiled / optimized / DLL files
+__pycache__/
+*.py[cod]

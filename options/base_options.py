@@ -73,6 +73,8 @@ class BaseOptions():
         self.parser.add_argument("--n_convs", type=int, default=8)
         self.parser.add_argument("--shift_param", action="store_true")
         self.parser.add_argument("--act_GAN_loss", action="store_true")
+        self.parser.add_argument("--spectral_norm", action="store_true")
+        self.parser.add_argument('--RED_n_layers_D', type=int, default=1, help='only used if which_model_netD==n_layers')
         self.RED = False
 
         self.initialized = True

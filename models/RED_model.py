@@ -80,9 +80,14 @@ class REDModel(BaseModel):
                 self.fake_B_pool = ImagePool(opt.pool_size)
                 
             elif self.opt.act_GAN_loss:
-                self.netD_A = networks.define_D(256 + 256 + 3 + 3, 512,
-                                            "activation",
-                                            opt.n_layers_D, opt.norm, False, opt.init_type, self.gpu_ids)
+                if self.opt.spectral_norm:
+                    self.netD_A = networks.define_D(256 + 256 + 3 + 3, 512,
+                                                "sn_basic",
+                                                opt.RED_n_layers_D, opt.norm, False, opt.init_type, self.gpu_ids)    
+                else:
+                    self.netD_A = networks.define_D(256 + 256 + 3 + 3, 512,
+                                                "activation",
+                                                opt.RED_n_layers_D, opt.norm, False, opt.init_type, self.gpu_ids)
                 self.fake_B_pool = ImagePool(opt.pool_size)
             
             if self.opt.Temporal_GAN_loss:
@@ -255,8 +260,8 @@ class REDModel(BaseModel):
             self.loss += self.loss_G_A
             
         if self.opt.lpips:
-            self.loss_lpips = self.opt.lambda_lpips * self.netLPIPS(self.fake_im, self.real_im).mean()
-            self.loss += self.loss_lpips
+            self.loss_lpips = self.netLPIPS(self.fake_im, self.real_im).mean()
+            self.loss += self.opt.lambda_lpips * self.loss_lpips
         
         if self.opt.lambda_feature > 0:
             self.loss_feature = self.calc_feature_loss() * self.opt.lambda_feature
