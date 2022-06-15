@@ -11,13 +11,22 @@ import os
 # frames = 200
 # width = 512
 # obama trump
-save_path = "comparison_result_o2t"
-cyclegan_path = "/home/nas4_user/yeojeongpark/compression/pytorch-CycleGAN-and-pix2pix/results/ott_cyclegan_new/test_latest/fake"
-unsup_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_obamatrump/test_latest/real"
-red_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_obamatrump/test_latest/fake"
-input_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_obamatrump/test_latest/input"
+# save_path = "comparison_result_o2t"
+# cyclegan_path = "/home/nas4_user/yeojeongpark/compression/pytorch-CycleGAN-and-pix2pix/results/ott_cyclegan_new/test_latest/fake"
+# unsup_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_obamatrump/test_latest/real"
+# red_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_obamatrump/test_latest/fake"
+# input_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_obamatrump/test_latest/input"
+# num_videos = 1
+# frames = 100
+# width = 256
+
+save_path = "comparison_result_o2c"
+cyclegan_path = "/home/nas4_user/yeojeongpark/compression/pytorch-CycleGAN-and-pix2pix/results/otc_cyclegan_new/test_latest/fake"
+unsup_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_olivercolbert/test_latest/real"
+red_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_olivercolbert/test_latest/fake"
+input_path = "/home/nas4_user/yeojeongpark/compression/Unsup_Recycle_GAN/results/RED_face_olivercolbert/test_latest/input"
 num_videos = 1
-frames = 100
+frames = 200
 width = 256
 
 os.makedirs(save_path, exist_ok=True)

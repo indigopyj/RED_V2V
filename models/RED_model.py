@@ -117,7 +117,7 @@ class REDModel(BaseModel):
             if self.opt.lpips:
                 from models import lpips
                 self.netLPIPS = lpips.PerceptualLoss(model="net-lin", net="vgg", vgg_blocks=["1", "2", "3", "4", "5"], use_gpu=True,)
-            if self.opt.ssim:
+            if self.opt.ssim_loss:
                 self.loss_names += ['ssim']
             
             if opt.continue_train:

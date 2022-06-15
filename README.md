@@ -22,9 +22,9 @@ Viper dataset can be downloaded [here](https://playing-for-benchmarks.org/downlo
 
 Cityscapes dataset is available [here](https://www.cityscapes-dataset.com/downloads/). Note that we need to deal with video data, so we downloaded “[leftImg8bit_sequence_trainvaltest.zip (324GB)](https://www.cityscapes-dataset.com/file-handling/?packageID=14)”. Don’t be confused by downloading image dataset.
 
-### Obama to Trump
+### Face to Face
 
-*Obama to Trump dataset* is provided by RecycleGAN and can be downloaded [here](https://www.dropbox.com/s/s6kzovbrevin5tr/faces.tar.gz?dl=0). A single image within this dataset is composed of consecutive 3 frames. So we cropped it into a single frame when data-preprocessing.
+*Face to Face dataset* is provided by RecycleGAN and can be downloaded [here](https://www.dropbox.com/s/s6kzovbrevin5tr/faces.tar.gz?dl=0). A single image within this dataset is composed of consecutive 3 frames. So we cropped it into a single frame when data-preprocessing.
 
 # 2. Training
 
@@ -36,6 +36,8 @@ Pretrained models are available below.
     1. [Viper-to-Cityscapes RED model](https://davian-lab.quickconnect.to/d/s/p532ugFUzqykV8hDvr5Q35TP2qBfElbk/Xz7UnRDXr4IuNSWOIOZtcq5pjfygFWzY-WriAlwOumAk)
 2. [Obama-to-Trump original model](https://davian-lab.quickconnect.to/d/s/p5xjE9W6O7e8KopBgsTrL32ZFZ40FF2T/R7yCII_paOcO9g1n3q_Wbwpgy1m97tZ--e7vgSpdjmQk)
     1. [Obama-to-Trump RED model](https://davian-lab.quickconnect.to/d/s/p5xhW6mDzER2dYjcF0m5qNeCihB2kjLX/FsO-jM60rqOKJbqxWs_MpaMEOaQ420xX-JrxgZKRjmQk)
+3. [Oliver-to-Colbert original model](https://davian-lab.quickconnect.to/d/s/p6tnR9Il4YU04KHAVbeT0uw1oWT4HJmH/-ZwBD9HAfcwhIraCvZjym4hu4jPYlMDo-FLzAi5cdmgk)
+    1. [Oliver-to-Colbert RED model](https://davian-lab.quickconnect.to/d/s/p6toa23IVyJllY5aKHP6oLSqSsFGJdKz/u_z4lXdVEQz9KcAE3wubDIs_Yey-2BRB-V7zgc6Edmgk)
 
 ### Original Generator
 
@@ -115,7 +117,16 @@ python test_RED.py --dataroot path/to/data/ \
 
 # 3. Evaluate
 
-## FVD
+## FID
+
+For evaluating FID score, we use 'pytorch-fid' from official PyTorch package. To compute the FID score between two datasets, where images of each dataset are contained in an individual folder:
+
+```
+pip install pytorch-fid
+python -m pytorch_fid path/to/real_dataset path/to/generated_dataset
+```
+
+In this paper, we use 200 frames of Oliver-to-Colbert test dataset as real dataset and our 200 result images as generated dataset.
 
 ## Warping Error
 
