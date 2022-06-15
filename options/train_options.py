@@ -52,6 +52,7 @@ class TrainOptions(BaseOptions):
         self.parser.add_argument("--lambda_feature", type=float, default=0.0)
         self.parser.add_argument("--lambda_D_T", type=float, default=1.0)
         self.parser.add_argument("--lambda_shift", type=float, default=1.0)
+        self.parser.add_argument("--ssim_loss", action='store_true')
 
         self.isTrain = True
         self.Test_RED = False

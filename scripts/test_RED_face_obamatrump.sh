@@ -1,0 +1,1 @@
+python test_RED.py --dataroot ../Recycle-GAN/faces/ObamaTrump --name RED_face_obamatrump --dataset_mode video --main_G_path checkpoints/face_obamatrump/latest_net_G_A.pth --how_many 10 --no_dropout --n_convs 8 --results_dir ./results/ --act_GAN_loss --spectral_norm --loadSizeH 256 --loadSizeW 256 --fineSizeH 256 --fineSizeW 256 --max_interval 10

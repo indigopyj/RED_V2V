@@ -61,17 +61,34 @@ class BaseModel():
         from collections import OrderedDict
         new_state_dict = OrderedDict()
         for k, v in weight.items():
+            if "decoder" in k: # bug
+                continue
             if k[:6] == "module":
                 name = k[7:] # remove `module.`
                 new_state_dict[name] = v
             else:
                 new_state_dict[k] = v
+        
         network.load_state_dict(new_state_dict, strict=True)
         
         
     def load_pretrained_network(self, network, network_path):
-        
-        network.load_state_dict(torch.load(network_path), strict=False)
+        weight = torch.load(network_path)
+        if isinstance(network, nn.DataParallel):
+            network = network.module
+        from collections import OrderedDict
+        new_state_dict = OrderedDict()
+        for k, v in weight.items():
+            if "decoder" in k: # bug
+                continue
+            if k[:6] == "module":
+                name = k[7:] # remove `module.`
+                new_state_dict[name] = v
+            else:
+                new_state_dict[k] = v
+            
+        network.load_state_dict(new_state_dict, strict=True)
+        #network.load_state_dict(torch.load(network_path), strict=False)
     
     def eval(self):
         """Make models eval mode during test time"""

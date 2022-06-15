@@ -211,8 +211,14 @@ def scale_img(img, opt, transform):
     else:
         raise ValueError("Invalid crop mode!")
 
-    w_offset = random.randint(0, max(0, w - fineSizeW - 1))
-    h_offset = random.randint(0, max(0, h - fineSizeH - 1))
+    if 'ObamaTrump' in opt.dataroot or 'OliverColbert' in opt.dataroot:
+        if opt.phase == "train":
+            h_offset, w_offset = 0, 256 * random.randint(0, 2)
+        else:
+            h_offset, w_offset = 0, 0
+    else:
+        w_offset = random.randint(0, max(0, w - fineSizeW - 1))
+        h_offset = random.randint(0, max(0, h - fineSizeH - 1))
 
     img = img[:, h_offset:h_offset + fineSizeH, w_offset:w_offset + fineSizeW]
     
