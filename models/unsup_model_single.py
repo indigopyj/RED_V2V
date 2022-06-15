@@ -12,6 +12,8 @@ import sys
 import cv2
 import random
 from models import vgg
+import time
+from torchprofile import profile_macs
 
 class UnsupModel(BaseModel):
   def name(self):
@@ -93,6 +95,8 @@ class UnsupModel(BaseModel):
       networks.print_network(self.netD_A)
       networks.print_network(self.netD_B)
     print('-----------------------------------------------')
+    self.total_spent = 0
+    self.macs = None
 
   def GaussianNoise(self, ins, mean=0, stddev=0.03):
     # adapted from https://github.com/daooshee/ReReVST-Code/blob/master/train/loss_networks.py
@@ -171,8 +175,14 @@ class UnsupModel(BaseModel):
       self.real_A = Variable(self.input_A)
       self.real_B = Variable(self.input_B)
 
+      start = time.time()
       self.fake_B = self.netG_A(self.real_A)
+      self.total_spent += time.time() - start
+
       self.fake_A = self.netG_B(self.real_B)
+
+      if self.macs is None:
+        self.macs = profile_macs(self.netG_A, (self.real_A))
 
   def get_image_paths(self):
     return self.image_paths

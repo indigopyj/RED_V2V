@@ -429,11 +429,11 @@ class ResnetGenerator(nn.Module):
                                          bias=use_bias),
                       norm_layer(int(ngf * mult / 2)),
                       nn.ReLU(True)]
-        decoder = model
+        #decoder = model
         model += [nn.ReflectionPad2d(3)]
         model += [nn.Conv2d(ngf, output_nc, kernel_size=7, padding=0)]
         model += [nn.Tanh()]
-        self.decoder = nn.Sequential(*decoder)
+        #self.decoder = nn.Sequential(*decoder)
         self.model = nn.Sequential(*model)
 
     def forward(self, input):

@@ -1,0 +1,1 @@
+CUDA_VISIBLE_DEVICES=0 python test.py --dataroot ../Recycle-GAN/faces/ObamaTrump --model unsup_single --dataset_mode unaligned_scale --name face_obamatrump --loadSizeW 256 --loadSizeH 256 --resize_mode rectangle --fineSizeW 256 --fineSizeH 256 --crop_mode none --which_model_netG resnet_6blocks --no_dropout

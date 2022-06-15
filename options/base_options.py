@@ -75,6 +75,8 @@ class BaseOptions():
         self.parser.add_argument("--act_GAN_loss", action="store_true")
         self.parser.add_argument("--spectral_norm", action="store_true")
         self.parser.add_argument('--RED_n_layers_D', type=int, default=1, help='only used if which_model_netD==n_layers')
+        self.parser.add_argument("--stm", action="store_true")
+        
         self.RED = False
 
         self.initialized = True

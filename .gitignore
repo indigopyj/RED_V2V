@@ -13,3 +13,8 @@ __pycache__/
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[cod]
+
+cnngeometric_pytorch/
+comparison_result_*/
+visualize/
+precomputed_masks_*/

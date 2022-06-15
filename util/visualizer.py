@@ -124,8 +124,8 @@ class Visualizer():
             self.writer.add_scalar(k,v, global_step=step)
         self.writer.flush()
     # errors: same format as |errors| of plotCurrentErrors
-    def print_current_errors(self, epoch, i, errors, t):
-        message = '(epoch: %d, iters: %d, time: %.3f) ' % (epoch, i, t)
+    def print_current_errors(self, epoch, i, total_iters, errors, t):
+        message = '(epoch: %d, iters: %d, total_iters: %d  time: %.3f) ' % (epoch, i, total_iters, t)
         for k, v in errors.items():
             message += '%s: %.3f ' % (k, v)
 

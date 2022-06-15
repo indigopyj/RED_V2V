@@ -18,6 +18,11 @@ from torchprofile import profile_macs
 from util.image_pool import ImagePool
 from models.networks import init_weights
 from util.util import warp
+from pytorch_msssim import ssim
+
+from torchprofile import profile_macs
+import time
+
 
 def init_net(net, gpu_ids):
     if len(gpu_ids) > 0:
@@ -65,6 +70,7 @@ class REDModel(BaseModel):
         print(self.netR)
         self.netR = init_net(self.netR, opt.gpu_ids)
         
+            
 
         # define loss functions
         self.criterionL1 = torch.nn.L1Loss()
@@ -111,6 +117,8 @@ class REDModel(BaseModel):
             if self.opt.lpips:
                 from models import lpips
                 self.netLPIPS = lpips.PerceptualLoss(model="net-lin", net="vgg", vgg_blocks=["1", "2", "3", "4", "5"], use_gpu=True,)
+            if self.opt.ssim:
+                self.loss_names += ['ssim']
             
             if opt.continue_train:
                 self.load_network(self.netR, 'RED', self.opt.which_epoch)
@@ -119,10 +127,10 @@ class REDModel(BaseModel):
                 if self.opt.Temporal_GAN_loss:
                     self.load_network(self.netD_T_A, 'D_T_A', self.opt.which_epoch) 
                 
-            if self.opt.shift_param:
-                self.opt.actl1 = True
-                self.loss_names += ['shift']
-                self.criterionL1_shift = torch.nn.L1Loss()
+            # if self.opt.shift_param:
+            #     self.opt.actl1 = True
+            #     self.loss_names += ['shift']
+            #     self.criterionL1_shift = torch.nn.L1Loss()
                 
             # initialize optimizers; schedulers will be automatically created by function <BaseModel.setup>.
             self.optimizer = torch.optim.Adam(self.netR.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
@@ -245,8 +253,11 @@ class REDModel(BaseModel):
         else:
             self.loss_l1 = self.criterionL1(self.fake_diff, self.real_diff)
         self.loss_l1_out = self.criterionL1_out(self.fake_im, self.real_im)
-        
-        self.loss = self.loss_l1 * lambda_l1 + self.loss_l1_out * lambda_l1_out
+        if self.opt.ssim_loss:
+            self.loss_ssim = 1 - ssim(self.fake_im, self.real_im, data_range=1, size_average=True)
+            self.loss = self.loss_l1 * lambda_l1 + lambda_l1_out * (0.7 * self.loss_l1_out + 0.3 * self.loss_ssim)
+        else:
+            self.loss = self.loss_l1 * lambda_l1 + self.loss_l1_out * lambda_l1_out
         
         # GAN loss
         if self.opt.GAN_loss:
@@ -267,10 +278,11 @@ class REDModel(BaseModel):
             self.loss_feature = self.calc_feature_loss() * self.opt.lambda_feature
             self.loss += self.loss_feature
             
-        if self.opt.shift_param:
-            warped_img1 = warp(self.img1_resized, self.flow)
-            self.loss_shift = self.opt.lambda_shift * self.criterionL1_shift(warped_img1, self.img2_resized)
-            self.loss += self.loss_shift
+        
+        # if self.opt.shift_param:
+        #     warped_img1 = warp(self.img1_resized, self.flow)
+        #     self.loss_shift = self.opt.lambda_shift * self.criterionL1_shift(warped_img1, self.img2_resized)
+        #     self.loss += self.loss_shift
         
         self.loss.backward()
 
@@ -362,8 +374,16 @@ class REDModel(BaseModel):
                     img2_paths = []
                     for batch_idx in range(len(self.img1_paths)):
                         img1_name, img1_ext = os.path.splitext(self.img1_paths[batch_idx])
-                        img2_idx = int(img1_name.split("_")[1]) + j
-                        img2_name =  "%s_%05d%s" %(img1_name.split("_")[0], img2_idx, img1_ext)
+                        if 'ObamaTrump' in self.opt.dataroot or 'OliverColbert' in self.opt.dataroot:
+                            if 'OliverColbert' in self.opt.dataroot:
+                                img2_idx0, img2_idx1 = img1_name.split('_')
+                                img2_name = "%02d_%012d%s" % (int(img2_idx0), int(img2_idx1)+batch_idx, img1_ext)
+                            else:
+                                img2_idx = int(img1_name) + j
+                                img2_name =  "%05d%s" %(img2_idx, img1_ext)
+                        else:
+                            img2_idx = int(img1_name.split("_")[1]) + j
+                            img2_name =  "%s_%05d%s" %(img1_name.split("_")[0], img2_idx, img1_ext)
                         img2_path = os.path.join(self.image_root[batch_idx], img2_name) 
                         img2_paths.append(img2_path)
                     self.set_test_input(img2_paths) # load an image (img1 + interval) as a batch : self.next_img
@@ -405,6 +425,8 @@ class REDModel(BaseModel):
         self.netR.eval()
         self.test_dataloader = create_eval_dataloader(self.opt, "test")
 
+        total_spent = 0
+        count = 0
         with torch.no_grad():
             for seq_idx, seq_i in enumerate(tqdm(self.test_dataloader, desc='Eval       ', position=2, leave=False)):
                 if seq_idx >= self.opt.how_many:  # only apply our model to opt.how_many videos.
@@ -423,7 +445,10 @@ class REDModel(BaseModel):
                     # reference_img : past frame(picked every interval)
                     if i % self.opt.max_interval == 0:
                         reference_img = self.next_img
+                        start = time.time()
                         fake_im = self.modelG(reference_img)
+                        total_spent += time.time() - start
+                        count += 1
                         #real_act = self.modelG.model[:self.opt.layer_idx](self.next_img)
                         #fake_im = self.modelG.model[self.opt.layer_idx:](real_act)
                         real_im = fake_im
@@ -433,6 +458,7 @@ class REDModel(BaseModel):
                         # hm1 = make_heatmap(real_act)
                         # hm2 = np.zeros((256, 512, 3), np.uint8)
                     else:
+                        start = time.time()
                         nextimg_resized = F.interpolate(self.next_img, size=activations.shape[2:], mode='bicubic')
                         fake_diff, warped_activations, _ = self.netR(ref_resized, nextimg_resized, activations, 0)
                         #hm = make_heatmap(fake_diff)
@@ -440,9 +466,12 @@ class REDModel(BaseModel):
                         fake_act = warped_activations + fake_diff
                         
                         #hm2 = make_heatmap(fake_act)
-                        real_im = self.modelG.model(self.next_img)
                         #real_im = self.modelG.model[self.opt.layer_idx:](real_act)
                         fake_im = self.modelG.model[self.opt.layer_idx:](fake_act)
+                        total_spent += time.time() - start
+                        count += 1
+
+                        real_im = self.modelG.model(self.next_img)
                     
                         # hm1 = make_heatmap(real_act)
                         # hm2 = make_heatmap(fake_act)
@@ -459,7 +488,11 @@ class REDModel(BaseModel):
                     save_image(fake_im, os.path.join(result_path, 'fake', '%s' % name), create_dir=True)
                     cat_img = cv2.cvtColor(cat_img, cv2.COLOR_RGB2BGR)
                     video.write(cat_img)
-    
+
+            print(f'Spent time : ', total_spent / count)
+            macs = profile_macs(self.netR, (ref_resized, nextimg_resized, activations)) \
+                   + profile_macs(self.modelG.model[self.opt.layer_idx:], (fake_act))
+            print('MACs: %.3fG' % (macs / 1e9))
     
     def profile(self, verbose=True):
         self.test_dataloader = create_eval_dataloader(self.opt, "test")

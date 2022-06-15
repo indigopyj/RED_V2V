@@ -62,7 +62,7 @@ if __name__ == '__main__':
             if total_steps % opt.print_freq == 0:
                 errors = model.get_current_errors()
                 t = (time.time() - iter_start_time) / opt.batchSize
-                visualizer.print_current_errors(epoch, epoch_iter, errors, t)
+                visualizer.print_current_errors(epoch, epoch_iter, total_steps, errors, t)
                 if opt.tensorboard_dir is not None:
                     visualizer.plot_tb(errors, total_steps)
                 if opt.display_id > 0:
