@@ -81,7 +81,7 @@ python train_RED.py --dataroot path/to/data \
 
 # 2. Test
 
-Note that we test only 200 frames per video.
+Note that we test only 200 frames per video. You can also get MACs and inference time after running test code.
 
 ### Original Generator
 
